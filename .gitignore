@@ -1,0 +1,7 @@
+/logs
+/README.md
+dump.py
+*.npy
+*.txt
+*.csv
+
