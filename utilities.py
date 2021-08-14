@@ -114,6 +114,5 @@ class DataLoader(Sequence):
         x = np.array([b[0] for b in batch])
         y = np.array([b[1] for b in batch])
         y_one_hot = np.array(tf.one_hot(y, self.classes))
-        end = time.perf_counter()
         return x, y_one_hot
 
