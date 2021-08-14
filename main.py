@@ -6,11 +6,13 @@ Kaggle Competition
 from utilities import *
 from random import seed
 
+
 # C:\Users\Nikos\Desktop\Nikos\HMMY\Code\Google Landmark Recognition 2021\Dataset
 
 if __name__ == "__main__":
     start = time.perf_counter()
     IMAGE_SIZE = 250
+    classes = 81313
 
     # Seeds
     seed(0)
@@ -22,16 +24,20 @@ if __name__ == "__main__":
     labels = dict(pd.read_csv(
         filepath_or_buffer="C:/Users/Nikos/Desktop/Nikos/HMMY/Code/Google Landmark Recognition 2021/Dataset/train.csv").values)
 
+
     # Data Loader
-    data_loader = DataLoader(batch_size=64, path=path, IMAGE_SIZE=IMAGE_SIZE)
-    x,y = data_loader.return_data()
+    data_loader = DataLoader(batch_size=64, data_path=path, IMAGE_SIZE=IMAGE_SIZE)
+    # temp = data_loader.return_data()
+    # x,y = temp
+    # y_one_hot = np.array(tf.one_hot(y, classes))
 
-    # names = [b[0] for b in batch]
-    # y = [labels[name[:-4]] for name in names]
-    print('kassa')
-    # y = labels(batch)
+    model = returnVGG16((IMAGE_SIZE, IMAGE_SIZE, 3))  # x.shape[1:])
+    # model.fit(x, y_one_hot)
+    training_epoch(data_loader=data_loader, model=model)
 
-    model = returnVGG16(x.shape[1:])
+
+
+
 
     # Execution Time
     end = time.perf_counter()
