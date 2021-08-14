@@ -54,6 +54,7 @@ class DataLoader(Sequence):
         self.IMAGE_SIZE = IMAGE_SIZE
         self.labels = dict(pd.read_csv(filepath_or_buffer=data_path + '/train.csv').values)
         self.classes = classes
+        self.index = 0
 
         # Calculate 3 directory permutations
         # Each epoch the directories must be acces in a random order
@@ -62,8 +63,7 @@ class DataLoader(Sequence):
 
         # Calculate current directory and its file list
         self.current_dir = [self.permutations[i][0] for i in range(3)]
-        self.current_dir_file_list = os.listdir(
-            self.train_path + '/' + self.current_dir[0] + '/' + self.current_dir[1] + '/' + self.current_dir[2])
+        self.current_dir_file_list = self.get_current_dir_file_list()
 
         # Permute image list too
         self.current_dir_file_list = list(np.random.permutation(self.current_dir_file_list))
@@ -74,20 +74,29 @@ class DataLoader(Sequence):
     def make_path(self):
         pass
 
-    def __len__(self):
+    def get_current_dir_file_list(self):
+        return os.listdir(self.train_path + '/' + self.current_dir[0] + '/' + self.current_dir[1] + '/' + self.current_dir[2])
+
+    def __len__(self):  # TODO
         # return math.ceil(len(self.labels) / self.batch_size)
         return  math.ceil(382 / self.batch_size)
 
     def __getitem__(self, index):
+        self.index += 1
         # print(f"Mphka {index}")
         batch = []
-        # X = None
-        # y_one_hot = None
+
+         # TODO
         # for dir0 in self.permutations[0]:
         # for dir1 in self.permutations[1]:
         # for dir2 in self.permutations[2]:
+        #     self.current_dir[2] = dir2
+        self.current_dir_file_list = self.get_current_dir_file_list()
+
         start_index = index * self.batch_size
         print(self.current_dir)
+
+        # Maybe delete ?
         if start_index + self.batch_size <= len(self.current_dir_file_list):
             end_index = start_index + self.batch_size
         else:
@@ -114,5 +123,9 @@ class DataLoader(Sequence):
         x = np.array([b[0] for b in batch])
         y = np.array([b[1] for b in batch])
         y_one_hot = np.array(tf.one_hot(y, self.classes))
+        # print(f"Bghka {index}")
         return x, y_one_hot
 
+    def on_epoch_end(self):
+        print("kappa")
+    # TODO one epoch end, shuffle
