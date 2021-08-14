@@ -46,13 +46,14 @@ def training_epoch(data_loader, model, classes=81313):
         i += 1
 
 
-class DataLoader:
-    def __init__(self, batch_size, data_path, IMAGE_SIZE):
+class DataLoader(Sequence):
+    def __init__(self, batch_size, data_path, IMAGE_SIZE, classes=81313):
         self.batch_size = batch_size
         self.train_path = data_path + '/train'
         self.file_index = 0
         self.IMAGE_SIZE = IMAGE_SIZE
         self.labels = dict(pd.read_csv(filepath_or_buffer=data_path + '/train.csv').values)
+        self.classes = classes
 
         # Calculate 3 directory permutations
         # Each epoch the directories must be acces in a random order
@@ -73,13 +74,28 @@ class DataLoader:
     def make_path(self):
         pass
 
-    def return_data(self):
+    def __len__(self):
+        # return math.ceil(len(self.labels) / self.batch_size)
+        return  math.ceil(382 / self.batch_size)
+
+    def __getitem__(self, index):
+        # print(f"Mphka {index}")
         batch = []
+        # X = None
+        # y_one_hot = None
         # for dir0 in self.permutations[0]:
         # for dir1 in self.permutations[1]:
         # for dir2 in self.permutations[2]:
+        start_index = index * self.batch_size
         print(self.current_dir)
-        for idx, image_name in enumerate(self.current_dir_file_list):
+        if start_index + self.batch_size <= len(self.current_dir_file_list):
+            end_index = start_index + self.batch_size
+        else:
+            end_index = len(self.current_dir_file_list)
+
+        for idx in range(start_index, end_index):
+            # print(idx)
+            image_name = self.current_dir_file_list[idx]
             # Read image and scale
             img_array = cv2.imread(
                 self.train_path + '/' + self.current_dir[0] + '/' + self.current_dir[1] + '/' + self.current_dir[
@@ -95,10 +111,9 @@ class DataLoader:
             # Append to batch
             batch.append((img_array, y))
 
-            if len(batch) >= self.batch_size or idx == len(self.current_dir_file_list) - 1:
-                # break
+        x = np.array([b[0] for b in batch])
+        y = np.array([b[1] for b in batch])
+        y_one_hot = np.array(tf.one_hot(y, self.classes))
+        end = time.perf_counter()
+        return x, y_one_hot
 
-                x = np.array([b[0] for b in batch])
-                y = np.array([b[1] for b in batch])
-                batch = []
-                yield x, y
