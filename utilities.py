@@ -21,6 +21,7 @@ import glob
 import os
 import time
 from tqdm import tqdm
+from copy import deepcopy
 
 
 def returnVGG16(input_shape, classes=81313):
@@ -47,96 +48,18 @@ def training(data_loader, model, classes=81313, epochs=1):
             i += 1
 
 
-# class DataLoader(Sequence):
-#     def __init__(self, batch_size, data_path, IMAGE_SIZE, classes=81313):
-#         self.batch_size = batch_size
-#         self.train_path = data_path + '/train'
-#         self.file_index = 0
-#         self.IMAGE_SIZE = IMAGE_SIZE
-#         self.labels = dict(pd.read_csv(filepath_or_buffer=data_path + '/train.csv').values)
-#         self.classes = classes
-#         self.index = 0
-#
-#         # Calculate 3 directory permutations
-#         # Each epoch the directories must be acces in a random order
-#         self.directories = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f']
-#         self.permutations = self.calc_permutations()
-#
-#         # Calculate current directory and its file list
-#         self.current_dir = [self.permutations[i][0] for i in range(3)]
-#         self.current_dir_file_list = self.get_current_dir_file_list()
-#
-#         # Permute image list too
-#         self.current_dir_file_list = list(np.random.permutation(self.current_dir_file_list))
-#
-#     def calc_permutations(self):
-#         return [np.random.permutation(self.directories) for _ in range(3)]
-#
-#     def make_path(self):
-#         pass
-#
-#     def get_current_dir_file_list(self):
-#         return os.listdir(self.train_path + '/' + self.current_dir[0] + '/' + self.current_dir[1] + '/' + self.current_dir[2])
-#
-#     def __len__(self):  # TODO
-#         # return math.ceil(len(self.labels) / self.batch_size)
-#         return  math.ceil(382 / self.batch_size)
-#
-#     def __getitem__(self, index):
-#         self.index += 1
-#         # print(f"Mphka {index}")
-#         batch = []
-#
-#          # TODO
-#         # for dir0 in self.permutations[0]:
-#         # for dir1 in self.permutations[1]:
-#         for dir2 in self.permutations[2]:
-#             self.current_dir[2] = dir2
-#             self.current_dir_file_list = self.get_current_dir_file_list()
-#
-#             start_index = self.index * self.batch_size
-#             print(self.current_dir)
-#
-#             # Maybe delete ?
-#             if start_index + self.batch_size <= len(self.current_dir_file_list):
-#                 end_index = start_index + self.batch_size
-#             else:
-#                 end_index = len(self.current_dir_file_list)
-#
-#             for idx in range(start_index, end_index):
-#                 # print(idx)
-#                 image_name = self.current_dir_file_list[idx]
-#                 # Read image and scale
-#                 img_array = cv2.imread(
-#                     self.train_path + '/' + self.current_dir[0] + '/' + self.current_dir[1] + '/' + self.current_dir[
-#                         2] + '/' + image_name) / 255.0
-#                 img_array = cv2.resize(img_array, (self.IMAGE_SIZE, self.IMAGE_SIZE))
-#
-#                 # cv2.imshow('image_name', img_array)
-#                 # cv2.waitKey(0)
-#
-#                 # Remove the last 4 characters (.png) and get the label from the dictionary
-#                 y = self.labels[image_name[:-4]]
-#
-#                 # Append to batch
-#                 batch.append((img_array, y))
-#
-#         x = np.array([b[0] for b in batch])
-#         y = np.array([b[1] for b in batch])
-#         y_one_hot = np.array(tf.one_hot(y, self.classes))
-#         # print(f"Bghka {index}")
-#         return x, y_one_hot
-#
-#     def on_epoch_end(self):
-#         print("kappa")
-#     # TODO one epoch end, shuffle
-
 def preprocess_data(path, IMG_SIZE=150, validation_size=0.25, classes=81313):
     directories = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f']
     labels = dict(pd.read_csv(filepath_or_buffer=path + '/train.csv').values)
     keys = list(labels.keys())
     values = list(labels.values())
-    all_classes = set(labels.values())
+    unique_classes = set(labels.values())
+
+    # Data will be passed to each dictionary
+    # Then the dictionaries will be converted to dataframes
+    # This drastically improves execution time
+    validation_dict = {}
+    training_dict = {}
 
     print(len(values))
 
@@ -145,11 +68,11 @@ def preprocess_data(path, IMG_SIZE=150, validation_size=0.25, classes=81313):
     dictionary_index = 0
 
     # Find the samples that are in each class
-    for c in tqdm(all_classes):
+    for class_ in tqdm(unique_classes):
         class_samples = []
-        while (True):
-            if values[dictionary_index] == c:
-                class_samples.append(keys[dictionary_index])
+        while True:
+            if values[dictionary_index] == class_:
+                class_samples.append((keys[dictionary_index], values[dictionary_index]))
                 dictionary_index += 1
             else:
                 break
@@ -159,9 +82,39 @@ def preprocess_data(path, IMG_SIZE=150, validation_size=0.25, classes=81313):
         # Add a percentage of each classes samples in the validation set
         number_of_samples = len(class_samples)
         validation_samples = sample(class_samples, math.floor(number_of_samples * validation_size))
-        for val_sample in validation_samples:
-            validation_set.append(val_sample)
 
+        # # Remove validation samples from the class samples
+        training_samples = deepcopy(class_samples)
+        [training_samples.remove(i) for i in validation_samples]
+
+        for val_sample in validation_samples:
+            validation_set.append(val_sample[0])
+            # validation_df.loc[len(validation_df)] = val_sample
+            validation_dict[val_sample[0]] = val_sample[1]
+
+        for training_sample in training_samples:
+            # training_df.loc[len(training_df)] = training_sample
+            training_dict[training_sample[0]] = training_sample[1]
+
+    # Delete variables to save memory
+    del values
+    del keys
+    del labels
+    del unique_classes
+
+    # Convert dictionaries to dataframes
+    validation_df = pd.DataFrame.from_dict(validation_dict, orient='index')
+    del validation_dict
+    training_df = pd.DataFrame.from_dict(training_dict, orient='index')
+    del training_dict
+
+    # Save Dataframes to csv
+    validation_df.to_csv(path + '/validation_dataframe.csv', index=True, header=False)
+    training_df.to_csv(path + '/training_dataframe.csv', index=True, header=False)
+    del validation_df
+    del training_df
+
+    # Read images, reisize them and save them in new directories
     for dir0 in tqdm(directories):
         for dir1 in tqdm(directories):
             for dir2 in tqdm(directories):
@@ -174,11 +127,11 @@ def preprocess_data(path, IMG_SIZE=150, validation_size=0.25, classes=81313):
                     # cv2.imshow('image_name', img_array)
                     # cv2.waitKey(0)
 
-                    dir = '/training_set/'
+                    directory = '/training_set/'
                     if image_name[:-4] in validation_set:
-                        dir = '/validation_set/'
+                        directory = '/validation_set/'
 
-                    cv2.imwrite(path + dir + image_name, img_array)
+                    cv2.imwrite(path + directory + image_name, img_array)
     return
 
 
