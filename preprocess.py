@@ -8,7 +8,7 @@ from tqdm import tqdm
 
 if __name__ == "__main__":
     start = time.perf_counter()
-    IMG_SIZE = 150
+    IMG_SIZE = 175
 
     # Seeds
     seed(0)
@@ -16,7 +16,7 @@ if __name__ == "__main__":
     tf.random.set_seed(0)
 
     path = "C:/Users/Nikos/Desktop/Nikos/HMMY/Code/Google Landmark Recognition 2021/Dataset"
-    preprocess_data(path=path,IMG_SIZE=IMG_SIZE, validation_size=0.25)
+    preprocess_data(path=path, img_size=IMG_SIZE, validation_size=0.25)
 
 
     # Execution Time
