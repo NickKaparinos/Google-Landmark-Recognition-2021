@@ -12,9 +12,8 @@ from tensorflow.keras.utils import Sequence
 # import efficientnet.keras as efn
 import tensorflow.keras.layers as L
 from tensorflow.keras.utils import Sequence
-from tensorflow.keras.preprocessing import image
 from random import shuffle, seed, sample
-from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import label_binarize
 import cv2
 import math
 import glob
@@ -61,7 +60,7 @@ def preprocess_data(path, img_size=175, validation_size=0.25, classes=81313):
     validation_dict = {}
     training_dict = {}
 
-    print(len(values))
+    # print(len(values))
 
     # Sample validation set using stratification
     validation_set = []
@@ -141,32 +140,29 @@ def preprocess_data(path, img_size=175, validation_size=0.25, classes=81313):
                         images_succesfully_saved += 1
                     else:
                         print(f"Image not saved: {image_name}")
-    print(f"Images succesfully saved {images_succesfully_saved}")
+    print(f"Images successfully saved: {images_succesfully_saved}")
     return
 
 
 class DataLoader(Sequence):
-    def __init__(self, batch_size, data_path, labels_dataframe_path, IMG_SIZE, run_validation=False,
-                 validation_dataloader=None, classes=81313):
+    def __init__(self, batch_size, data_path, labels_dataframe_path, IMG_SIZE, unique_classes, run_validation=False,
+                 validation_dataloader=None):
         self.batch_size = batch_size
         self.data_path = data_path
         self.IMG_SIZE = IMG_SIZE
         self.labels = dict(pd.read_csv(filepath_or_buffer=labels_dataframe_path, header=None).values)
-        self.classes = classes
+        self.unique_classes = unique_classes
         self.run_validation = False
         self.validation_dataloader = validation_dataloader
 
         self.current_dir_file_list = os.listdir(data_path)
         self.number_of_images = len(self.current_dir_file_list)
 
-    def __len__(self):  # TODO
-        # return math.ceil(len(self.labels) / self.batch_size)
-        return math.ceil(self.number_of_images / self.batch_size)
+    def __len__(self): #TODO
+        # return math.ceil(self.number_of_images / self.batch_size)
+        return 10
 
     def __getitem__(self, index):
-        print(f"Mphka {index}")
-        batch = []
-
         # Calculate start index and end index
         start_index = index * self.batch_size
         if start_index + self.batch_size < self.number_of_images:
@@ -189,7 +185,6 @@ class DataLoader(Sequence):
             # cv2.waitKey(0)
 
             # Remove the last 4 characters (.png) and get the label from the dictionary
-            # TODO shenanigans with labels dictionary
             temp = image_name[:-4]
             if temp not in self.labels:
                 print("wtf den einai")
@@ -201,18 +196,13 @@ class DataLoader(Sequence):
                 y_temp = self.labels[image_name[:-4]]
 
             # Append to batch
-            # batch.append((img_array, y))
-            print(image_index)
-            # X[in_batch_index] = img_array
+            X[in_batch_index] = img_array
             y[in_batch_index] = y_temp
-        exit(1)
 
-        # x = np.array([b[0] for b in batch])
-        # y = np.array([b[1] for b in batch])
-        y_one_hot = np.array(tf.one_hot(y, self.classes))
-        print(f"Bghka {index}")
+        # y_one_hot = np.array(tf.one_hot(y, self.classes))
+        y_one_hot = label_binarize(y, classes=self.unique_classes)
         return X, y_one_hot
 
     def on_epoch_end(self):
         print("kappa")
-    # TODO one epoch end, shuffle
+    # TODO one epoch end
