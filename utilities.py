@@ -42,12 +42,10 @@ class CustomValidationCallback(Callback):
         print("Stop training; got log keys: {}".format(keys))
 
     def on_epoch_end(self, epoch, logs=None):
-        keys = list(logs.keys())
-
         y = []
         y_pred = []
-        # y_pred = self.model.predict(x=self.validation_sequence)
-        loop_counter = 0
+
+        # Validation
         for x, y_temp in self.validation_sequence:
             # Predict
             y_pred_temp = self.model.predict(x=x)
@@ -59,21 +57,15 @@ class CustomValidationCallback(Callback):
             # Extend
             y.extend(y_temp2)
             y_pred.extend(y_pred_temp2)
-            loop_counter += 1
 
-        accuracy = accuracy_score(y,y_pred)
-        f1 = f1_score(y,y_pred,average='macro')
+        # Compute metrics
+        accuracy = accuracy_score(y, y_pred)
+        f1 = f1_score(y, y_pred, average='macro')
 
-        fet = 5 + self.epoch
-
-        # TODO for loop because of memory issues
-        # Todo calculate validation accuracy and validation f1
-
-        tf.summary.scalar('Validation_test', data=fet, step=self.epoch)
+        # Write
         tf.summary.scalar('Validation_Accuracy', data=accuracy, step=self.epoch)
         tf.summary.scalar('Validation_F1', data=f1, step=self.epoch)
         self.epoch += 1
-        # print("End epoch {} of training; got log keys: {}".format(epoch, keys))
 
 
 def returnVGG16(input_shape, classes=81313):
@@ -214,18 +206,8 @@ class DataSequence(Sequence):
         # if not self.is_validation_sequence:
         self.number_of_images = 10 * self.batch_size
 
-        if self.is_validation_sequence:
-            self.y_list = []
-
     def __len__(self):
-        # return 10
         return math.ceil(self.number_of_images / self.batch_size)
-        # if self.is_validation_sequence:
-        #     return math.ceil(self.number_of_images / self.batch_size)
-        # return 10
-
-    def on_epoch_begin(self):
-        pass
 
     def __getitem__(self, index):
         # Calculate start index and end index
@@ -255,10 +237,6 @@ class DataSequence(Sequence):
             # Append to batch
             X[in_batch_index] = img_array
             y[in_batch_index] = y_temp
-
-            # If is a validation sequence, save y for validation logging
-            if self.is_validation_sequence:
-                self.y_list.append(y_temp)
 
         y_one_hot = label_binarize(y, classes=self.unique_classes)
         return X, y_one_hot
