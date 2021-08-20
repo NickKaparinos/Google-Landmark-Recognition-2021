@@ -6,14 +6,17 @@ Kaggle Competition
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+from tensorflow import summary
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, Flatten, Conv2D, MaxPooling2D
+from keras.callbacks import Callback
 from tensorflow.keras.utils import Sequence
 # import efficientnet.keras as efn
 import tensorflow.keras.layers as L
 from tensorflow.keras.utils import Sequence
 from random import shuffle, seed, sample
 from sklearn.preprocessing import label_binarize
+from sklearn.metrics import accuracy_score, f1_score
 import cv2
 import math
 import glob
@@ -21,6 +24,56 @@ import os
 import time
 from tqdm import tqdm
 from copy import deepcopy
+
+
+class CustomValidationCallback(Callback):
+    def __init__(self, validation_sequence, log_dir):
+        self.validation_sequence = validation_sequence
+        self.log_dir = log_dir
+        super().__init__()
+
+    def on_train_begin(self, logs=None):
+        self.epoch = 0
+        keys = list(logs.keys())
+        print("Starting training; got log keys: {}".format(keys))
+
+    def on_train_end(self, logs=None):
+        keys = list(logs.keys())
+        print("Stop training; got log keys: {}".format(keys))
+
+    def on_epoch_end(self, epoch, logs=None):
+        keys = list(logs.keys())
+
+        y = []
+        y_pred = []
+        # y_pred = self.model.predict(x=self.validation_sequence)
+        loop_counter = 0
+        for x, y_temp in self.validation_sequence:
+            # Predict
+            y_pred_temp = self.model.predict(x=x)
+
+            # Argmax
+            y_pred_temp2 = np.argmax(y_pred_temp, axis=1)
+            y_temp2 = np.argmax(y_temp, axis=1)
+
+            # Extend
+            y.extend(y_temp2)
+            y_pred.extend(y_pred_temp2)
+            loop_counter += 1
+
+        accuracy = accuracy_score(y,y_pred)
+        f1 = f1_score(y,y_pred,average='macro')
+
+        fet = 5 + self.epoch
+
+        # TODO for loop because of memory issues
+        # Todo calculate validation accuracy and validation f1
+
+        tf.summary.scalar('Validation_test', data=fet, step=self.epoch)
+        tf.summary.scalar('Validation_Accuracy', data=accuracy, step=self.epoch)
+        tf.summary.scalar('Validation_F1', data=f1, step=self.epoch)
+        self.epoch += 1
+        # print("End epoch {} of training; got log keys: {}".format(epoch, keys))
 
 
 def returnVGG16(input_shape, classes=81313):
@@ -144,23 +197,35 @@ def preprocess_data(path, img_size=175, validation_size=0.25, classes=81313):
     return
 
 
-class DataLoader(Sequence):
-    def __init__(self, batch_size, data_path, labels_dataframe_path, IMG_SIZE, unique_classes, run_validation=False,
-                 validation_dataloader=None):
+class DataSequence(Sequence):
+    def __init__(self, batch_size, data_path, labels_dataframe_path, IMG_SIZE, unique_classes,
+                 is_validation_sequence=False):
         self.batch_size = batch_size
         self.data_path = data_path
         self.IMG_SIZE = IMG_SIZE
         self.labels = dict(pd.read_csv(filepath_or_buffer=labels_dataframe_path, header=None).values)
         self.unique_classes = unique_classes
-        self.run_validation = False
-        self.validation_dataloader = validation_dataloader
+        self.is_validation_sequence = is_validation_sequence
 
         self.current_dir_file_list = os.listdir(data_path)
         self.number_of_images = len(self.current_dir_file_list)
+        # TODO
 
-    def __len__(self): #TODO
-        # return math.ceil(self.number_of_images / self.batch_size)
-        return 10
+        # if not self.is_validation_sequence:
+        self.number_of_images = 10 * self.batch_size
+
+        if self.is_validation_sequence:
+            self.y_list = []
+
+    def __len__(self):
+        # return 10
+        return math.ceil(self.number_of_images / self.batch_size)
+        # if self.is_validation_sequence:
+        #     return math.ceil(self.number_of_images / self.batch_size)
+        # return 10
+
+    def on_epoch_begin(self):
+        pass
 
     def __getitem__(self, index):
         # Calculate start index and end index
@@ -168,7 +233,7 @@ class DataLoader(Sequence):
         if start_index + self.batch_size < self.number_of_images:
             end_index = start_index + self.batch_size
         else:
-            end_index = len(self.current_dir_file_list)
+            end_index = self.number_of_images
 
         batch_lenth = end_index - start_index
         X = np.zeros((batch_lenth, self.IMG_SIZE, self.IMG_SIZE, 3))
@@ -185,24 +250,15 @@ class DataLoader(Sequence):
             # cv2.waitKey(0)
 
             # Remove the last 4 characters (.png) and get the label from the dictionary
-            temp = image_name[:-4]
-            if temp not in self.labels:
-                print("wtf den einai")
-                print(img_array.shape)
-                print(temp)
-
-                y_temp = 1
-            else:
-                y_temp = self.labels[image_name[:-4]]
+            y_temp = self.labels[image_name[:-4]]
 
             # Append to batch
             X[in_batch_index] = img_array
             y[in_batch_index] = y_temp
 
-        # y_one_hot = np.array(tf.one_hot(y, self.classes))
+            # If is a validation sequence, save y for validation logging
+            if self.is_validation_sequence:
+                self.y_list.append(y_temp)
+
         y_one_hot = label_binarize(y, classes=self.unique_classes)
         return X, y_one_hot
-
-    def on_epoch_end(self):
-        print("kappa")
-    # TODO one epoch end
