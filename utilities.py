@@ -37,9 +37,9 @@ class CustomValidationCallback(Callback):
         keys = list(logs.keys())
         print("Starting training; got log keys: {}".format(keys))
 
-    def on_train_end(self, logs=None):
-        keys = list(logs.keys())
-        print("Stop training; got log keys: {}".format(keys))
+    # def on_train_end(self, logs=None):
+    #     keys = list(logs.keys())
+    #     print("Stop training; got log keys: {}".format(keys))
 
     def on_epoch_end(self, epoch, logs=None):
         y = []
@@ -65,6 +65,7 @@ class CustomValidationCallback(Callback):
         # Write
         tf.summary.scalar('Validation_Accuracy', data=accuracy, step=self.epoch)
         tf.summary.scalar('Validation_F1', data=f1, step=self.epoch)
+        print(f"Epoch {self.epoch}\nValidation Accuracy: {accuracy}\nValidation F1: {f1}")
         self.epoch += 1
 
 
@@ -201,10 +202,11 @@ class DataSequence(Sequence):
 
         self.current_dir_file_list = os.listdir(data_path)
         self.number_of_images = len(self.current_dir_file_list)
-        # TODO
 
+
+        # TODO
         # if not self.is_validation_sequence:
-        self.number_of_images = 10 * self.batch_size
+        # self.number_of_images = 10 * self.batch_size
 
     def __len__(self):
         return math.ceil(self.number_of_images / self.batch_size)

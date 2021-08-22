@@ -7,8 +7,6 @@ from utilities import *
 from random import seed
 from tensorflow.keras.callbacks import TensorBoard, CSVLogger
 
-# C:\Users\Nikos\Desktop\Nikos\HMMY\Code\Google Landmark Recognition 2021\Dataset
-
 if __name__ == "__main__":
     start = time.perf_counter()
     IMG_SIZE = 175
@@ -48,9 +46,9 @@ if __name__ == "__main__":
 
     batch = training_sequence[0]
     model = returnVGG16((IMG_SIZE, IMG_SIZE, 3))  # x.shape[1:])
-    model.fit(x=training_sequence, epochs=5, use_multiprocessing=False,
+    model.fit(x=training_sequence, epochs=4, use_multiprocessing=False,
               callbacks=[tensorboard, csv_logger, custom_validation_callback])
-    # fet_pred = model.predict(x=training_sequence)
+    model.save(LOG_DIR)
     # tensorboard --logdir "Google Landmark Recognition 2021\logs"
 
     # Execution Time
