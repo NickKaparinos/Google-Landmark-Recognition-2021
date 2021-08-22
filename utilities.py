@@ -77,7 +77,7 @@ def returnVGG16(input_shape, classes=81313):
 
     model = Sequential(model.layers)
     model.add(Flatten())
-    model.add(Dense(128, activation='relu', kernel_initializer='he_uniform'))
+    model.add(Dense(512, activation='relu', kernel_initializer='he_uniform'))
     model.add(Dense(classes, activation='softmax'))
 
     model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
