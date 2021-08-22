@@ -40,14 +40,13 @@ if __name__ == "__main__":
                                      labels_dataframe_path=path + '/training_dataframe.csv',
                                      is_validation_sequence=False, IMG_SIZE=IMG_SIZE,
                                      unique_classes=unique_classes)
-    custom_validation_callback = CustomValidationCallback(validation_sequence=validation_sequence, log_dir=LOG_DIR)
     del labels
     del unique_classes
 
     batch = training_sequence[0]
-    model = returnVGG16((IMG_SIZE, IMG_SIZE, 3))  # x.shape[1:])
-    model.fit(x=training_sequence, epochs=4, use_multiprocessing=False,
-              callbacks=[tensorboard, csv_logger, custom_validation_callback])
+    model = build_model((IMG_SIZE, IMG_SIZE, 3))  # x.shape[1:])
+    model.fit(x=training_sequence, validation_data=validation_sequence, epochs=4, use_multiprocessing=False,
+              callbacks=[tensorboard, csv_logger])
     model.save(LOG_DIR)
     # tensorboard --logdir "Google Landmark Recognition 2021\logs"
 

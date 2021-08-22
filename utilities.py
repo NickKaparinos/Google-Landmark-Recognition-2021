@@ -6,6 +6,7 @@ Kaggle Competition
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+from keras.metrics import Precision, Recall
 from tensorflow import summary
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, Flatten, Conv2D, MaxPooling2D
@@ -26,71 +27,29 @@ from tqdm import tqdm
 from copy import deepcopy
 
 
-class CustomValidationCallback(Callback):
-    def __init__(self, validation_sequence, log_dir):
-        self.validation_sequence = validation_sequence
-        self.log_dir = log_dir
-        super().__init__()
+def build_model(input_shape, classes=81313):
+    # model_backbone = tf.keras.applications.VGG16(include_top=False, input_shape=input_shape)
+    model_backbone = tf.keras.applications.ResNet50(include_top=False, weights="imagenet", input_shape=input_shape)
 
-    def on_train_begin(self, logs=None):
-        self.epoch = 0
-        keys = list(logs.keys())
-        print("Starting training; got log keys: {}".format(keys))
-
-    # def on_train_end(self, logs=None):
-    #     keys = list(logs.keys())
-    #     print("Stop training; got log keys: {}".format(keys))
-
-    def on_epoch_end(self, epoch, logs=None):
-        y = []
-        y_pred = []
-
-        # Validation
-        for x, y_temp in self.validation_sequence:
-            # Predict
-            y_pred_temp = self.model.predict(x=x)
-
-            # Argmax
-            y_pred_temp2 = np.argmax(y_pred_temp, axis=1)
-            y_temp2 = np.argmax(y_temp, axis=1)
-
-            # Extend
-            y.extend(y_temp2)
-            y_pred.extend(y_pred_temp2)
-
-        # Compute metrics
-        accuracy = accuracy_score(y, y_pred)
-        f1 = f1_score(y, y_pred, average='macro')
-
-        # Write
-        tf.summary.scalar('Validation_Accuracy', data=accuracy, step=self.epoch)
-        tf.summary.scalar('Validation_F1', data=f1, step=self.epoch)
-        print(f"Epoch {self.epoch}\nValidation Accuracy: {accuracy}\nValidation F1: {f1}")
-        self.epoch += 1
-
-
-def returnVGG16(input_shape, classes=81313):
-    model = tf.keras.applications.VGG16(include_top=False, input_shape=input_shape, classes=2,
-                                        classifier_activation='sigmoid')
-    for layer in model.layers:
+    # Freeze layers
+    for layer in model_backbone.layers:
         layer.trainable = False
 
-    model = Sequential(model.layers)
+    # Add backbone
+    model = Sequential()
+    model.add(model_backbone)
+    # model = Sequential(model.layers)
+
+    # Add neck
     model.add(Flatten())
+    model.add(Dense(512, activation='relu', kernel_initializer='he_uniform'))
     model.add(Dense(512, activation='relu', kernel_initializer='he_uniform'))
     model.add(Dense(classes, activation='softmax'))
 
-    model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+    model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy', Precision(), Recall()])
     return model
 
 
-def training(data_loader, model, classes=81313, epochs=1):
-    i = 0
-    for _ in range(epochs):
-        for x, y in data_loader.generate_date():
-            # print(i)
-            model.fit(x, y)
-            i += 1
 
 
 def preprocess_data(path, img_size=175, validation_size=0.25, classes=81313):
@@ -203,10 +162,9 @@ class DataSequence(Sequence):
         self.current_dir_file_list = os.listdir(data_path)
         self.number_of_images = len(self.current_dir_file_list)
 
-
         # TODO
         # if not self.is_validation_sequence:
-        # self.number_of_images = 10 * self.batch_size
+        self.number_of_images = 100 * self.batch_size
 
     def __len__(self):
         return math.ceil(self.number_of_images / self.batch_size)
