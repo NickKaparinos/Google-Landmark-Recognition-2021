@@ -47,7 +47,7 @@ if __name__ == "__main__":
     model = build_model((IMG_SIZE, IMG_SIZE, 3))  # x.shape[1:])
     model.fit(x=training_sequence, validation_data=validation_sequence, epochs=4, use_multiprocessing=False,
               callbacks=[tensorboard, csv_logger])
-    model.save(LOG_DIR)
+    # model.save(LOG_DIR)
     # tensorboard --logdir "Google Landmark Recognition 2021\logs"
 
     # Execution Time

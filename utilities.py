@@ -7,9 +7,11 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 from keras.metrics import Precision, Recall
+from tensorflow import keras
+from tensorflow.keras import layers
 from tensorflow import summary
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, Flatten, Conv2D, MaxPooling2D
+from tensorflow.keras.layers import Dense, Flatten, Conv2D, MaxPooling2D, BatchNormalization
 from keras.callbacks import Callback
 from tensorflow.keras.utils import Sequence
 # import efficientnet.keras as efn
@@ -25,6 +27,7 @@ import os
 import time
 from tqdm import tqdm
 from copy import deepcopy
+import efficientnet.tfkeras as efn
 
 
 def build_model(input_shape, classes=81313):
@@ -42,14 +45,15 @@ def build_model(input_shape, classes=81313):
 
     # Add neck
     model.add(Flatten())
-    model.add(Dense(512, activation='relu', kernel_initializer='he_uniform'))
+    model.add(Dense(1024, activation='relu', kernel_initializer='he_uniform'))
+    model.add(BatchNormalization())
+    model.add(Dense(1024, activation='relu', kernel_initializer='he_uniform'))
+    model.add(BatchNormalization())
     model.add(Dense(512, activation='relu', kernel_initializer='he_uniform'))
     model.add(Dense(classes, activation='softmax'))
 
     model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy', Precision(), Recall()])
     return model
-
-
 
 
 def preprocess_data(path, img_size=175, validation_size=0.25, classes=81313):
@@ -164,7 +168,7 @@ class DataSequence(Sequence):
 
         # TODO
         # if not self.is_validation_sequence:
-        self.number_of_images = 100 * self.batch_size
+        # self.number_of_images = 100 * self.batch_size
 
     def __len__(self):
         return math.ceil(self.number_of_images / self.batch_size)

@@ -1,8 +1,9 @@
 __pycache__/
 /logs
 /README.md
+variables
 dump.py
 *.npy
 *.txt
 *.csv
-
+*.pb
