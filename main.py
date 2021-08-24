@@ -12,43 +12,49 @@ if __name__ == "__main__":
     IMG_SIZE = 175
     classes = 81313
 
+    # Tensorboard
+    LOG_DIR = 'logs/pytorch'
+    writer = SummaryWriter(log_dir=LOG_DIR)
+
     # Seeds
     seed(0)
     np.random.seed(0)
-    tf.random.set_seed(0)
-
-    # Logs
-    LOG_DIR = f"logs/test/{str(time.strftime('%d_%b_%Y_%H_%M_%S', time.localtime()))}"
-    tensorboard = TensorBoard(log_dir=LOG_DIR)
-    csv_logger = CSVLogger(filename=LOG_DIR + "/logs.csv")
-
-    file_writer = tf.summary.create_file_writer(LOG_DIR + "/metrics")
-    file_writer.set_as_default()
+    torch.manual_seed(0)
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    print(f"Using: {device}")
 
     # Read labels
     path = "C:/Users/Nikos/Desktop/Nikos/HMMY/Code/Google Landmark Recognition 2021/Dataset"
     labels = pd.read_csv(
         filepath_or_buffer="C:/Users/Nikos/Desktop/Nikos/HMMY/Code/Google Landmark Recognition 2021/Dataset/train.csv")
     unique_classes = np.unique(labels.iloc[:, 1])
-
     # Updated DataSequence
-    validation_sequence = DataSequence(batch_size=64, data_path=path + '/validation_set',
+    validation_dataloader = DataLoader(batch_size=64, data_path=path + '/validation_set',
                                        labels_dataframe_path=path + '/validation_dataframe.csv',
                                        is_validation_sequence=True, IMG_SIZE=IMG_SIZE,
                                        unique_classes=unique_classes)
-    training_sequence = DataSequence(batch_size=64, data_path=path + '/training_set',
+    training_dataloader = DataLoader(batch_size=64, data_path=path + '/training_set',
                                      labels_dataframe_path=path + '/training_dataframe.csv',
                                      is_validation_sequence=False, IMG_SIZE=IMG_SIZE,
                                      unique_classes=unique_classes)
     del labels
     del unique_classes
 
-    batch = training_sequence[0]
-    model = build_model((IMG_SIZE, IMG_SIZE, 3))  # x.shape[1:])
-    model.fit(x=training_sequence, validation_data=validation_sequence, epochs=4, use_multiprocessing=False,
-              callbacks=[tensorboard, csv_logger])
-    # model.save(LOG_DIR)
-    # tensorboard --logdir "Google Landmark Recognition 2021\logs"
+    # Model
+    # batch = training_dataloader[0]
+    model = pytorch_model().to(device)  # tensorboard --logdir "Google Landmark Recognition 2021\logs"
+    # model = PytorchTransferModel().to(device)
+    learning_rate = 1e-3
+    epochs = 5
+    loss_fn = torch.nn.CrossEntropyLoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+
+    # Training
+    for epoch in range(epochs):
+        print(f"-----------------Epoch {epoch + 1}-----------------")
+        pytorch_train_loop(training_dataloader, model, loss_fn, optimizer, writer, epoch, device)
+        pytorch_test_loop(validation_dataloader, model, loss_fn, writer, epoch, device)
+
 
     # Execution Time
     end = time.perf_counter()

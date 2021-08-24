@@ -5,18 +5,6 @@ Kaggle Competition
 """
 import numpy as np
 import pandas as pd
-import tensorflow as tf
-from keras.metrics import Precision, Recall
-from tensorflow import keras
-from tensorflow.keras import layers
-from tensorflow import summary
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, Flatten, Conv2D, MaxPooling2D, BatchNormalization
-from keras.callbacks import Callback
-from tensorflow.keras.utils import Sequence
-# import efficientnet.keras as efn
-import tensorflow.keras.layers as L
-from tensorflow.keras.utils import Sequence
 from random import shuffle, seed, sample
 from sklearn.preprocessing import label_binarize
 from sklearn.metrics import accuracy_score, f1_score
@@ -27,33 +15,146 @@ import os
 import time
 from tqdm import tqdm
 from copy import deepcopy
-import efficientnet.tfkeras as efn
+from torch.utils.data import Dataset
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.utils.data import DataLoader
+from torchvision.models import vgg16
+from torch.utils.tensorboard import SummaryWriter
+from efficientnet_pytorch import EfficientNet
 
 
-def build_model(input_shape, classes=81313):
-    # model_backbone = tf.keras.applications.VGG16(include_top=False, input_shape=input_shape)
-    model_backbone = tf.keras.applications.ResNet50(include_top=False, weights="imagenet", input_shape=input_shape)
+class PytorchTransferModel(nn.Module):
+    def __init__(self, input_channels=3, print_shape=False, n_classes=81313):
+        super().__init__()
+        # self.model = vgg16(pretrained=True)
+        #
+        # # Freeze parameters
+        # for param in self.model.parameters():
+        #     param.requires_grad = False
+        #
+        # # Add final layer
+        # num_features = self.model.classifier._modules['6'].in_features
+        # self.model.classifier._modules['6'] = nn.Linear(num_features, n_classes)
+        # self.model.classifier._modules['7'] = nn.Softmax(dim=1) #F.softmax(dim=1)
 
-    # Freeze layers
-    for layer in model_backbone.layers:
-        layer.trainable = False
+        self.model = EfficientNet.from_pretrained('efficientnet-b0')
+        for param in self.model.parameters():
+            param.requires_grad = False
+        # del self.model._modules['_swish']
+        # del self.model._modules['_fc']
+        self.fc = nn.Linear(5120, n_classes)
 
-    # Add backbone
-    model = Sequential()
-    model.add(model_backbone)
-    # model = Sequential(model.layers)
+        fet = 5
 
-    # Add neck
-    model.add(Flatten())
-    model.add(Dense(1024, activation='relu', kernel_initializer='he_uniform'))
-    model.add(BatchNormalization())
-    model.add(Dense(1024, activation='relu', kernel_initializer='he_uniform'))
-    model.add(BatchNormalization())
-    model.add(Dense(512, activation='relu', kernel_initializer='he_uniform'))
-    model.add(Dense(classes, activation='softmax'))
+    def forward(self, x):
+        x = self.model.extract_features(x.float())
+        x = nn.MaxPool2d(2, 2)(x)
+        x = nn.Flatten()(x)
+        print(x.shape)
+        x = F.softmax(self.fc(x), dim=1)
 
-    model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy', Precision(), Recall()])
-    return model
+        return x
+
+
+class pytorch_model(nn.Module):
+    def __init__(self, input_channels=3, print_shape=False, n_classes=81313):
+        super().__init__()
+        # self.convolutional = nn.Sequential(
+        #     nn.Conv2d(input_channels, 32, 5),
+        #     nn.ReLU(),
+        #     nn.MaxPool2d((2, 2)),
+        #     nn.Conv2d(32, 64, 5),
+        #     nn.ReLU(),
+        #     nn.MaxPool2d((2, 2)),
+        #     nn.Flatten(),
+        #     nn.Linear(5184, 128),
+        #     nn.ReLU(),
+        #     nn.Linear(128, 81313),
+        #     nn.Softmax()
+        # )
+        self.conv1 = nn.Conv2d(input_channels, 32, 5)
+        self.conv2 = nn.Conv2d(32, 8, 5)
+        self.linear1 = nn.Linear(32, n_classes)
+
+    def forward(self, x):
+        # x = self.convolutional(x)
+        x = self.conv1(x.float())
+        x = F.relu(x)
+        x = nn.MaxPool2d(8, 8)(x)
+        x = F.relu(self.conv2(x).float())
+        x = nn.MaxPool2d(8, 8)(x)
+        x = nn.Flatten()(x)
+        # print(x.shape)
+        x = F.softmax(self.linear1(x), dim=1)
+
+        return x
+
+
+def pytorch_train_loop(dataloader, model, loss_fn, optimizer, writer, epoch, device):
+    size = dataloader.number_of_images
+    num_batches = len(dataloader)
+    correct, running_loss = 0, 0.0
+
+    for batch in tqdm(range(num_batches)):
+        # print(f"Batch = {batch}")
+        # Load Data
+        X, y = dataloader[batch]
+
+        # Compute prediction and loss
+        y = y.to(device)
+        X = X.permute(0, 3, 1, 2).to(device)  # Permute from (Batch_size,IMG_SIZE,IMG_SIZE,CHANNELS)
+        y_pred = model(X)  # To (Batch_size,CHANNELS,IMG_SIZE,IMG_SIZE)
+        loss = loss_fn(y_pred, y)
+        y_pred_temp = torch.argmax(torch.Tensor.detach(y_pred), dim=1)
+        correct += (np.round(torch.Tensor.cpu(y_pred_temp)) == torch.Tensor.cpu(y)).type(torch.float).sum().item()
+
+        # Back propagation
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        running_loss += loss.item()
+        if batch % 100 == 0:
+            loss, current = loss.item(), batch * len(X)
+            writer.add_scalar('training_loss',
+                              running_loss / 1000,
+                              epoch * len(dataloader) + batch)
+
+            print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]")
+    correct /= size
+    writer.add_scalar('training_accuracy',
+                      correct,
+                      epoch + 1)
+    print(f"Train Error:  Accuracy: {(100 * correct):>0.1f}%\n")
+
+
+def pytorch_test_loop(dataloader, model, loss_fn, writer, epoch, device):
+    size = dataloader.number_of_images
+    num_batches = len(dataloader)
+    test_loss, correct = 0.0, 0
+
+    with torch.no_grad():
+        for batch in tqdm(range(num_batches)):
+            # Load Data
+            X, y = dataloader[batch]
+
+            y = y.to(device)
+            X = X.permute(0, 3, 1, 2).to(device)  # Permute from (Batch_size,IMG_SIZE,IMG_SIZE,CHANNELS)
+            y_pred = model(X)  # To (Batch_size,CHANNELS,IMG_SIZE,IMG_SIZE)
+            test_loss += loss_fn(y_pred, y).item()
+            y_pred_temp = torch.argmax(torch.Tensor.detach(y_pred), dim=1)
+            correct += (np.round(torch.Tensor.cpu(y_pred_temp)) == torch.Tensor.cpu(y)).type(torch.float).sum().item()
+
+    writer.add_scalar('test_loss', test_loss, epoch)
+
+    test_loss /= num_batches
+    correct /= size
+    writer.add_scalar('test_accuracy',
+                      correct,
+                      epoch + 1)
+    print(f"Test Error: Accuracy: {(100 * correct):>0.1f}%, Avg loss: {test_loss:>8f} \n")
 
 
 def preprocess_data(path, img_size=175, validation_size=0.25, classes=81313):
@@ -153,7 +254,7 @@ def preprocess_data(path, img_size=175, validation_size=0.25, classes=81313):
     return
 
 
-class DataSequence(Sequence):
+class DataLoader(Dataset):
     def __init__(self, batch_size, data_path, labels_dataframe_path, IMG_SIZE, unique_classes,
                  is_validation_sequence=False):
         self.batch_size = batch_size
@@ -168,7 +269,7 @@ class DataSequence(Sequence):
 
         # TODO
         # if not self.is_validation_sequence:
-        # self.number_of_images = 100 * self.batch_size
+        # self.number_of_images = 10 * self.batch_size
 
     def __len__(self):
         return math.ceil(self.number_of_images / self.batch_size)
@@ -203,4 +304,5 @@ class DataSequence(Sequence):
             y[in_batch_index] = y_temp
 
         y_one_hot = label_binarize(y, classes=self.unique_classes)
-        return X, y_one_hot
+        y = np.argmax(y_one_hot, axis=1)
+        return torch.tensor(X), torch.tensor(y)
