@@ -4,8 +4,8 @@ Titanic - Machine Learning from Disaster
 Kaggle Competition
 """
 from utilities import *
-from random import seed
-from tensorflow.keras.callbacks import TensorBoard, CSVLogger
+from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
 
 if __name__ == "__main__":
     start = time.perf_counter()
@@ -29,21 +29,21 @@ if __name__ == "__main__":
         filepath_or_buffer="C:/Users/Nikos/Desktop/Nikos/HMMY/Code/Google Landmark Recognition 2021/Dataset/train.csv")
     unique_classes = np.unique(labels.iloc[:, 1])
     # Updated DataSequence
-    validation_dataloader = DataLoader(batch_size=64, data_path=path + '/validation_set',
-                                       labels_dataframe_path=path + '/validation_dataframe.csv',
-                                       is_validation_sequence=True, IMG_SIZE=IMG_SIZE,
-                                       unique_classes=unique_classes)
-    training_dataloader = DataLoader(batch_size=64, data_path=path + '/training_set',
-                                     labels_dataframe_path=path + '/training_dataframe.csv',
-                                     is_validation_sequence=False, IMG_SIZE=IMG_SIZE,
-                                     unique_classes=unique_classes)
+    validation_dataset = CustomDataset(batch_size=1, data_path=path + '/validation_set',
+                                       labels_dataframe_path=path + '/validation_dataframe.csv', IMG_SIZE=IMG_SIZE,
+                                       unique_classes=unique_classes, is_validation_dataset=True)
+    validation_dataloader = DataLoader(dataset=validation_dataset, batch_size=64, shuffle=True, num_workers=4, prefetch_factor=4)
+
+    training_dataset = CustomDataset(batch_size=1, data_path=path + '/training_set',
+                                     labels_dataframe_path=path + '/training_dataframe.csv', IMG_SIZE=IMG_SIZE,
+                                     unique_classes=unique_classes, is_validation_dataset=False)
+    training_dataloader = DataLoader(dataset=training_dataset, batch_size=64,shuffle=True, num_workers=4, prefetch_factor=4)
     del labels
     del unique_classes
 
-    # Model
-    # batch = training_dataloader[0]
-    model = pytorch_model().to(device)  # tensorboard --logdir "Google Landmark Recognition 2021\logs"
-    # model = PytorchTransferModel().to(device)
+    # Model                     # tensorboard --logdir "Google Landmark Recognition 2021\logs"
+    # model = pytorch_model().to(device)
+    model = PytorchTransferModel().to(device)
     learning_rate = 1e-3
     epochs = 5
     loss_fn = torch.nn.CrossEntropyLoss()
@@ -54,7 +54,6 @@ if __name__ == "__main__":
         print(f"-----------------Epoch {epoch + 1}-----------------")
         pytorch_train_loop(training_dataloader, model, loss_fn, optimizer, writer, epoch, device)
         pytorch_test_loop(validation_dataloader, model, loss_fn, writer, epoch, device)
-
 
     # Execution Time
     end = time.perf_counter()
