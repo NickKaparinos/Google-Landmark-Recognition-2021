@@ -13,7 +13,6 @@ if __name__ == "__main__":
     # Seeds
     seed(0)
     np.random.seed(0)
-    tf.random.set_seed(0)
 
     path = "C:/Users/Nikos/Desktop/Nikos/HMMY/Code/Google Landmark Recognition 2021/Dataset"
     preprocess_data(path=path, img_size=IMG_SIZE, validation_size=0.25)

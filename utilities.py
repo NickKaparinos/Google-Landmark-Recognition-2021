@@ -20,6 +20,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torchvision.models import vgg16
 from efficientnet_pytorch import EfficientNet
+from joblib import Parallel, delayed
+from metrics import *
 
 
 class PytorchTransferModel(nn.Module):
@@ -51,19 +53,22 @@ class PytorchTransferModel(nn.Module):
 class pytorch_model(nn.Module):
     def __init__(self, input_channels=3, print_shape=False, n_classes=81313):
         super().__init__()
-        self.conv1 = nn.Conv2d(input_channels, 32, 5)
-        self.conv2 = nn.Conv2d(32, 8, 5)
+        self.conv1 = nn.Conv2d(input_channels, 32, 1)
+        self.conv2 = nn.Conv2d(32, 8, 1)
         self.linear1 = nn.Linear(32, n_classes)
+        self.arc_face = ArcMarginProduct(800, n_classes, s=30, m=0.5)
 
     def forward(self, x):
+        x, y = x
         x = self.conv1(x.float())
         x = F.relu(x)
-        x = nn.MaxPool2d(8, 8)(x)
+        x = nn.MaxPool2d(4, 4)(x)
         x = F.relu(self.conv2(x).float())
-        x = nn.MaxPool2d(8, 8)(x)
+        x = nn.MaxPool2d(4, 4)(x)
         x = nn.Flatten()(x)
-        # print(x.shape)
-        x = F.softmax(self.linear1(x), dim=1)
+        print(x.shape)
+        # x = F.softmax(self.linear1(x), dim=1)
+        x = self.arc_face(x, y)
         return x
 
 
@@ -74,9 +79,10 @@ def pytorch_train_loop(dataloader, model, loss_fn, optimizer, writer, epoch, dev
     for batch, (X, y) in enumerate(tqdm(dataloader)):
         # Inference
         y = y[:, 0].to(device)
+
         X = X.permute(0, 4, 2, 3, 1).to(device)  # Permute from (Batch_size,IMG_SIZE,IMG_SIZE,CHANNELS)
         X = X[:, :, :, :, 0]  # To (Batch_size,CHANNELS,IMG_SIZE,IMG_SIZE)
-        y_pred = model(X)
+        y_pred = model((X, y))
 
         # Calculate loss function
         loss = loss_fn(y_pred, y)
@@ -113,7 +119,7 @@ def pytorch_test_loop(dataloader, model, loss_fn, writer, epoch, device):
             y = y[:, 0].to(device)
             X = X.permute(0, 4, 2, 3, 1).to(device)  # Permute from (Batch_size,IMG_SIZE,IMG_SIZE,CHANNELS)
             X = X[:, :, :, :, 0]  # To (Batch_size,CHANNELS,IMG_SIZE,IMG_SIZE)
-            y_pred = model(X)
+            y_pred = model((X, y))
             test_loss += loss_fn(y_pred, y).item()
             y_pred_temp = torch.argmax(torch.Tensor.detach(y_pred), dim=1)
             correct += (np.round(torch.Tensor.cpu(y_pred_temp)) == torch.Tensor.cpu(y)).type(torch.float).sum().item()
@@ -124,6 +130,36 @@ def pytorch_test_loop(dataloader, model, loss_fn, writer, epoch, device):
     correct /= size
     writer.add_scalar('test_accuracy', correct, epoch + 1)
     print(f"Test Error: Accuracy: {(100 * correct):>0.1f}%, Avg loss: {test_loss:>8f} \n")
+
+
+def preprocess_images(dir0, path, img_size, validation_set):
+    print(f"{dir0},{path},{img_size}")
+    images_succesfully_saved=0
+    directories = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f']
+    for dir1 in directories:
+        for dir2 in directories:
+            temp_path = path + '/train/' + dir0 + '/' + dir1 + '/' + dir2
+            images = os.listdir(temp_path)
+            for image_name in images:
+                # Read and resize image
+                img_array = cv2.imread(temp_path + '/' + image_name)  # / 255.0
+                img_array = cv2.resize(img_array, (img_size, img_size))
+
+                # cv2.imshow('image_name', img_array)
+                # cv2.waitKey(0)
+
+                # Check if it image is in the validation set
+                directory = '/training_set/'
+                if image_name[:-4] in validation_set:
+                    directory = '/validation_set/'
+
+                # Write image
+                image_saved = cv2.imwrite(path + directory + image_name, img_array)
+                if image_saved:
+                    images_succesfully_saved += 1
+                else:
+                    print(f"Image not saved: {image_name}")
+    return images_succesfully_saved
 
 
 def preprocess_data(path, img_size=175, validation_size=0.25, classes=81313):
@@ -195,31 +231,38 @@ def preprocess_data(path, img_size=175, validation_size=0.25, classes=81313):
 
     # Read images, resize them and save them in new directories
     images_succesfully_saved = 0
-    for dir0 in tqdm(directories):
-        for dir1 in directories:
-            for dir2 in directories:
-                temp_path = path + '/train/' + dir0 + '/' + dir1 + '/' + dir2
-                images = os.listdir(temp_path)
-                for image_name in images:
-                    # Read and resize image
-                    img_array = cv2.imread(temp_path + '/' + image_name)  # / 255.0
-                    img_array = cv2.resize(img_array, (img_size, img_size))
-
-                    # cv2.imshow('image_name', img_array)
-                    # cv2.waitKey(0)
-
-                    # Check if it image is in the validation set
-                    directory = '/training_set/'
-                    if image_name[:-4] in validation_set:
-                        directory = '/validation_set/'
-
-                    # Write image
-                    image_saved = cv2.imwrite(path + directory + image_name, img_array)
-                    if image_saved:
-                        images_succesfully_saved += 1
-                    else:
-                        print(f"Image not saved: {image_name}")
+    # for dir0 in tqdm(directories):
+    #     for dir1 in directories:
+    #         for dir2 in directories:
+    #             temp_path = path + '/train/' + dir0 + '/' + dir1 + '/' + dir2
+    #             images = os.listdir(temp_path)
+    #             for image_name in images:
+    #                 # Read and resize image
+    #                 img_array = cv2.imread(temp_path + '/' + image_name)  # / 255.0
+    #                 img_array = cv2.resize(img_array, (img_size, img_size))
+    #
+    #                 # cv2.imshow('image_name', img_array)
+    #                 # cv2.waitKey(0)
+    #
+    #                 # Check if it image is in the validation set
+    #                 directory = '/training_set/'
+    #                 if image_name[:-4] in validation_set:
+    #                     directory = '/validation_set/'
+    #
+    #                 # Write image
+    #                 image_saved = cv2.imwrite(path + directory + image_name, img_array)
+    #                 if image_saved:
+    #                     images_succesfully_saved += 1
+    #                 else:
+    #                     print(f"Image not saved: {image_name}")
+    # print(f"Images successfully saved: {images_succesfully_saved}")
+    results = Parallel(n_jobs=8, prefer="threads")(
+        delayed(preprocess_images)(dir, path, img_size, validation_set) for dir in directories)
+    print(results)
+    for i in results:
+        images_succesfully_saved += i
     print(f"Images successfully saved: {images_succesfully_saved}")
+    print("done")
     return
 
 

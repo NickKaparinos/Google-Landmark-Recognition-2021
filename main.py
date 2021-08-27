@@ -42,8 +42,8 @@ if __name__ == "__main__":
     del unique_classes
 
     # Model                     # tensorboard --logdir "Google Landmark Recognition 2021\logs"
-    # model = pytorch_model().to(device)
-    model = PytorchTransferModel().to(device)
+    model = pytorch_model().to(device)
+    # model = PytorchTransferModel().to(device)
     learning_rate = 1e-3
     epochs = 5
     loss_fn = torch.nn.CrossEntropyLoss()
