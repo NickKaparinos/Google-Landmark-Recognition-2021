@@ -8,6 +8,7 @@ import pandas as pd
 from random import shuffle, seed, sample
 from sklearn.preprocessing import label_binarize
 from sklearn.metrics import accuracy_score, f1_score
+from sklearn.metrics.pairwise import cosine_similarity
 import cv2
 import math
 import os
@@ -18,10 +19,15 @@ from torch.utils.data import Dataset
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torchvision.models import vgg16
+from torch.utils.data import DataLoader
 from efficientnet_pytorch import EfficientNet
 from joblib import Parallel, delayed
+from operator import itemgetter
 from metrics import *
+
+
+# from skcuda.linalg import dot, norm
+# import pycuda.gpuarray as gpuarray
 
 
 class PytorchTransferModel(nn.Module):
@@ -56,20 +62,35 @@ class pytorch_model(nn.Module):
         self.conv1 = nn.Conv2d(input_channels, 32, 1)
         self.conv2 = nn.Conv2d(32, 8, 1)
         self.linear1 = nn.Linear(32, n_classes)
-        self.arc_face = ArcMarginProduct(800, n_classes, s=30, m=0.5)
+        # self.arc_face = ArcMarginProduct(800, n_classes, s=30, m=0.5)
 
     def forward(self, x):
-        x, y = x
+        # x, y = x
         x = self.conv1(x.float())
         x = F.relu(x)
-        x = nn.MaxPool2d(4, 4)(x)
+        x = nn.MaxPool2d(8, 8)(x)
         x = F.relu(self.conv2(x).float())
-        x = nn.MaxPool2d(4, 4)(x)
+        x = nn.MaxPool2d(8, 8)(x)
         x = nn.Flatten()(x)
-        print(x.shape)
-        # x = F.softmax(self.linear1(x), dim=1)
-        x = self.arc_face(x, y)
+        # print(x.shape)
+        x = F.softmax(self.linear1(x), dim=1)
+        # x = self.arc_face(x, y)
         return x
+
+    def extract_features(self, x):
+        x = self.conv1(x.float())
+        x = F.relu(x)
+        x = nn.MaxPool2d(8, 8)(x)
+        x = F.relu(self.conv2(x).float())
+        x = nn.MaxPool2d(8, 8)(x)
+        x = nn.Flatten()(x)
+        return x
+
+
+# def cuda_cosine_similarity(X, Y):
+#     X = gpuarray.to_gpu(X)
+#     Y = gpuarray.to_gpu(Y)
+#     return dot(X, Y) / (norm(X), norm(Y))
 
 
 def pytorch_train_loop(dataloader, model, loss_fn, optimizer, writer, epoch, device):
@@ -82,7 +103,7 @@ def pytorch_train_loop(dataloader, model, loss_fn, optimizer, writer, epoch, dev
 
         X = X.permute(0, 4, 2, 3, 1).to(device)  # Permute from (Batch_size,IMG_SIZE,IMG_SIZE,CHANNELS)
         X = X[:, :, :, :, 0]  # To (Batch_size,CHANNELS,IMG_SIZE,IMG_SIZE)
-        y_pred = model((X, y))
+        y_pred = model(X)
 
         # Calculate loss function
         loss = loss_fn(y_pred, y)
@@ -119,7 +140,7 @@ def pytorch_test_loop(dataloader, model, loss_fn, writer, epoch, device):
             y = y[:, 0].to(device)
             X = X.permute(0, 4, 2, 3, 1).to(device)  # Permute from (Batch_size,IMG_SIZE,IMG_SIZE,CHANNELS)
             X = X[:, :, :, :, 0]  # To (Batch_size,CHANNELS,IMG_SIZE,IMG_SIZE)
-            y_pred = model((X, y))
+            y_pred = model(X)
             test_loss += loss_fn(y_pred, y).item()
             y_pred_temp = torch.argmax(torch.Tensor.detach(y_pred), dim=1)
             correct += (np.round(torch.Tensor.cpu(y_pred_temp)) == torch.Tensor.cpu(y)).type(torch.float).sum().item()
@@ -132,9 +153,101 @@ def pytorch_test_loop(dataloader, model, loss_fn, writer, epoch, device):
     print(f"Test Error: Accuracy: {(100 * correct):>0.1f}%, Avg loss: {test_loss:>8f} \n")
 
 
+def pytorch_embedding_test(training_dataloader, validation_dataloader, model, writer, epoch, device, k=3):
+    # Training embeddings
+    train_labels = []
+    train_embeddings = []
+    with torch.no_grad():
+        for batch, (X, y) in enumerate(tqdm(training_dataloader)):
+            # Extract feature embeddings
+            y = y[:, 0].to(device)
+            X = X.permute(0, 4, 2, 3, 1).to(device)  # Permute from (Batch_size,IMG_SIZE,IMG_SIZE,CHANNELS)
+            X = X[:, :, :, :, 0]  # To (Batch_size,CHANNELS,IMG_SIZE,IMG_SIZE)
+            temp_embeddings = model.extract_features(X)
+            temp_embeddings = np.array(temp_embeddings.cpu())
+            y = np.array(y.cpu())
+
+            # Add to lists
+            for i in temp_embeddings:
+                train_embeddings.append(i)
+            for i in y:
+                train_labels.append(i)
+
+    # Test embeddings
+    test_labels = []
+    test_embeddings = []
+    with torch.no_grad():
+        for batch, (X, y) in enumerate(tqdm(validation_dataloader)):
+            # Inference
+            y = y[:, 0].to(device)
+            X = X.permute(0, 4, 2, 3, 1).to(device)  # Permute from (Batch_size,IMG_SIZE,IMG_SIZE,CHANNELS)
+            X = X[:, :, :, :, 0]  # To (Batch_size,CHANNELS,IMG_SIZE,IMG_SIZE)
+            temp_embeddings = model.extract_features(X)
+            temp_embeddings = np.array(temp_embeddings.cpu())
+            y = np.array(y.cpu())
+
+            # Add to lists
+            for i in temp_embeddings:
+                test_embeddings.append(i)
+            for i in y:
+                test_labels.append(i)
+
+    # Cosine similarity and class prediction
+    predictions = []
+    batch_size = 64
+    test_embeddings_dataloader = DataLoader(test_embeddings, batch_size=batch_size)
+    for batch in tqdm(test_embeddings_dataloader):
+        # Calculate cosine similarities
+        cosine_similarities = cosine_similarity(batch, train_embeddings)
+
+        for j in range(batch.shape[0]):
+            cosine_similarities_temp = cosine_similarities[j, :].reshape(1, -1)
+
+            # Find k biggest similarities and the corresponding labels
+            k_similar_indices = np.argpartition(cosine_similarities_temp, -k, axis=1)[:, -k:]
+            k_similar_labels = []
+            k_biggest_similarities = []
+            for i in range(k):
+                index = k_similar_indices[0, i]
+                k_similar_labels.append(train_labels[index])
+                k_biggest_similarities.append(cosine_similarities_temp[0, index])
+
+            # Soft voting
+            unique_labels = list(np.unique(k_similar_labels))
+            voting_dict = {label: 0 for label in unique_labels}
+            for label, similarity in zip(k_similar_labels, k_biggest_similarities):
+                voting_dict[label] += similarity
+            predictions.append(max(voting_dict.items(), key=itemgetter(1))[0])
+
+    # for test_embedding in tqdm(test_embeddings):
+    #     # Calculate cosine similarities
+    #     cosine_similarities = cosine_similarity(test_embedding.reshape(1, -1), train_embeddings)
+    #
+    #     # Find k biggest similarities and the corresponding labels
+    #     k_similar_indices = np.argpartition(cosine_similarities, -k, axis=1)[:, -k:]
+    #     k_similar_labels = []
+    #     k_biggest_similarities = []
+    #     for i in range(k):
+    #         k_similar_labels.append(train_labels[i])
+    #         k_biggest_similarities.append(cosine_similarities[0, i])
+    #
+    #     # Soft voting
+    #     unique_labels = list(np.unique(k_similar_labels))
+    #     voting_dict = {label: 0 for label in unique_labels}
+    #     for label, similarity in zip(k_similar_labels, k_biggest_similarities):
+    #         voting_dict[label] += similarity
+    #     predictions.append(max(voting_dict.items(), key=itemgetter(1))[0])
+
+    # Calculate Accuracy and F1
+    accuracy = accuracy_score(test_labels, predictions)
+    f1 = f1_score(test_labels, predictions, average='micro')
+    writer.add_scalar('embedding_test_accuracy', accuracy, epoch + 1)
+    print(f"Embedding Test Error: Accuracy: {(100 * accuracy):>0.1f}% \n")
+    return 0
+
+
 def preprocess_images(dir0, path, img_size, validation_set):
-    print(f"{dir0},{path},{img_size}")
-    images_succesfully_saved=0
+    images_succesfully_saved = 0
     directories = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f']
     for dir1 in directories:
         for dir2 in directories:
@@ -231,38 +344,12 @@ def preprocess_data(path, img_size=175, validation_size=0.25, classes=81313):
 
     # Read images, resize them and save them in new directories
     images_succesfully_saved = 0
-    # for dir0 in tqdm(directories):
-    #     for dir1 in directories:
-    #         for dir2 in directories:
-    #             temp_path = path + '/train/' + dir0 + '/' + dir1 + '/' + dir2
-    #             images = os.listdir(temp_path)
-    #             for image_name in images:
-    #                 # Read and resize image
-    #                 img_array = cv2.imread(temp_path + '/' + image_name)  # / 255.0
-    #                 img_array = cv2.resize(img_array, (img_size, img_size))
-    #
-    #                 # cv2.imshow('image_name', img_array)
-    #                 # cv2.waitKey(0)
-    #
-    #                 # Check if it image is in the validation set
-    #                 directory = '/training_set/'
-    #                 if image_name[:-4] in validation_set:
-    #                     directory = '/validation_set/'
-    #
-    #                 # Write image
-    #                 image_saved = cv2.imwrite(path + directory + image_name, img_array)
-    #                 if image_saved:
-    #                     images_succesfully_saved += 1
-    #                 else:
-    #                     print(f"Image not saved: {image_name}")
-    # print(f"Images successfully saved: {images_succesfully_saved}")
     results = Parallel(n_jobs=8, prefer="threads")(
-        delayed(preprocess_images)(dir, path, img_size, validation_set) for dir in directories)
+        delayed(preprocess_images)(dir, path, img_size, validation_set) for dir in tqdm(directories))
     print(results)
     for i in results:
         images_succesfully_saved += i
     print(f"Images successfully saved: {images_succesfully_saved}")
-    print("done")
     return
 
 
@@ -279,7 +366,7 @@ class CustomDataset(Dataset):
         self.current_dir_file_list = os.listdir(data_path)
         self.number_of_images = len(self.current_dir_file_list)
 
-        self.number_of_images = 1000
+        self.number_of_images = 100000
 
     def __len__(self):
         return math.ceil(self.number_of_images / self.batch_size)

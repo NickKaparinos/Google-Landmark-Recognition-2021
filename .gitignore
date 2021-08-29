@@ -3,6 +3,7 @@ __pycache__/
 /README.md
 variables
 dump.py
+base.py
 *.npy
 *.txt
 *.csv

@@ -50,10 +50,13 @@ if __name__ == "__main__":
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
     # Training
+    n = 2 # emdedding validation every n epochs
     for epoch in range(epochs):
         print(f"-----------------Epoch {epoch + 1}-----------------")
         pytorch_train_loop(training_dataloader, model, loss_fn, optimizer, writer, epoch, device)
         pytorch_test_loop(validation_dataloader, model, loss_fn, writer, epoch, device)
+        # if (epoch+1) % n == 0:
+        pytorch_embedding_test(training_dataloader, validation_dataloader, model, writer, epoch, device)
 
     # Execution Time
     end = time.perf_counter()
