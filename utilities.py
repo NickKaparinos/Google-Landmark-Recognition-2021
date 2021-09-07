@@ -10,7 +10,6 @@ from sklearn.preprocessing import label_binarize
 from sklearn.metrics import accuracy_score, f1_score
 from sklearn.metrics.pairwise import cosine_similarity
 import cv2
-import math
 import os
 import time
 from tqdm import tqdm
@@ -19,40 +18,41 @@ from torch.utils.data import Dataset
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import DataLoader
 from efficientnet_pytorch import EfficientNet
 from joblib import Parallel, delayed
 from operator import itemgetter
-from metrics import *
-
-
-# from skcuda.linalg import dot, norm
-# import pycuda.gpuarray as gpuarray
+from torch.utils.data import DataLoader
+from arc_face import *
 
 
 class PytorchTransferModel(nn.Module):
     def __init__(self, input_channels=3, print_shape=False, n_classes=81313):
         super().__init__()
-        # Use vgg
-        # self.model = vgg16(pretrained=True)
-        #
-        # # Add final layer
-        # num_features = self.model.classifier._modules['6'].in_features
-        # self.model.classifier._modules['6'] = nn.Linear(num_features, n_classes)
-        # self.model.classifier._modules['7'] = nn.Softmax(dim=1) #F.softmax(dim=1)
-
         # Use efficientnet
-        self.model = EfficientNet.from_pretrained('efficientnet-b0')
+        self.model = EfficientNet.from_pretrained('efficientnet-b1')
         for param in self.model.parameters():
             param.requires_grad = False
-        self.fc = nn.Linear(5120, n_classes)
+        self.fc1 = nn.Linear(11520, 512)
+        self.fc2 = nn.Linear(512, 512)
+        self.batch_norm = nn.BatchNorm1d(512)
+        self.arc_face = ArcMarginProduct(512, n_classes, s=30, m=0.5)
 
     def forward(self, x):
+        x, y = x
         x = self.model.extract_features(x.float())
         x = nn.MaxPool2d(2, 2)(x)
         x = nn.Flatten()(x)
-        print(x.shape)
-        x = F.softmax(self.fc(x), dim=1)
+        x = self.batch_norm(self.fc1(x))
+        x = F.relu(x)
+        x = self.arc_face(x, y)
+        return x
+
+    def extract_features(self, x):
+        x = self.model.extract_features(x.float())
+        x = nn.MaxPool2d(2, 2)(x)
+        x = nn.Flatten()(x)
+        x = self.batch_norm(self.fc1(x))
+        x = F.relu(x)
         return x
 
 
@@ -61,36 +61,19 @@ class pytorch_model(nn.Module):
         super().__init__()
         self.conv1 = nn.Conv2d(input_channels, 32, 1)
         self.conv2 = nn.Conv2d(32, 8, 1)
-        self.linear1 = nn.Linear(32, n_classes)
-        # self.arc_face = ArcMarginProduct(800, n_classes, s=30, m=0.5)
+        self.linear1 = nn.Linear(1152, n_classes)
+        self.arc_face = ArcMarginProduct(1152, n_classes, s=30, m=0.5)
 
     def forward(self, x):
-        # x, y = x
+        x, y = x
         x = self.conv1(x.float())
         x = F.relu(x)
-        x = nn.MaxPool2d(8, 8)(x)
+        x = nn.MaxPool2d(4, 4)(x)
         x = F.relu(self.conv2(x).float())
-        x = nn.MaxPool2d(8, 8)(x)
+        x = nn.MaxPool2d(4, 4)(x)
         x = nn.Flatten()(x)
-        # print(x.shape)
-        x = F.softmax(self.linear1(x), dim=1)
-        # x = self.arc_face(x, y)
+        x = self.arc_face(x, y)
         return x
-
-    def extract_features(self, x):
-        x = self.conv1(x.float())
-        x = F.relu(x)
-        x = nn.MaxPool2d(8, 8)(x)
-        x = F.relu(self.conv2(x).float())
-        x = nn.MaxPool2d(8, 8)(x)
-        x = nn.Flatten()(x)
-        return x
-
-
-# def cuda_cosine_similarity(X, Y):
-#     X = gpuarray.to_gpu(X)
-#     Y = gpuarray.to_gpu(Y)
-#     return dot(X, Y) / (norm(X), norm(Y))
 
 
 def pytorch_train_loop(dataloader, model, loss_fn, optimizer, writer, epoch, device):
@@ -103,7 +86,7 @@ def pytorch_train_loop(dataloader, model, loss_fn, optimizer, writer, epoch, dev
 
         X = X.permute(0, 4, 2, 3, 1).to(device)  # Permute from (Batch_size,IMG_SIZE,IMG_SIZE,CHANNELS)
         X = X[:, :, :, :, 0]  # To (Batch_size,CHANNELS,IMG_SIZE,IMG_SIZE)
-        y_pred = model(X)
+        y_pred = model((X, y))
 
         # Calculate loss function
         loss = loss_fn(y_pred, y)
@@ -140,7 +123,7 @@ def pytorch_test_loop(dataloader, model, loss_fn, writer, epoch, device):
             y = y[:, 0].to(device)
             X = X.permute(0, 4, 2, 3, 1).to(device)  # Permute from (Batch_size,IMG_SIZE,IMG_SIZE,CHANNELS)
             X = X[:, :, :, :, 0]  # To (Batch_size,CHANNELS,IMG_SIZE,IMG_SIZE)
-            y_pred = model(X)
+            y_pred = model((X, y))
             test_loss += loss_fn(y_pred, y).item()
             y_pred_temp = torch.argmax(torch.Tensor.detach(y_pred), dim=1)
             correct += (np.round(torch.Tensor.cpu(y_pred_temp)) == torch.Tensor.cpu(y)).type(torch.float).sum().item()
@@ -151,6 +134,26 @@ def pytorch_test_loop(dataloader, model, loss_fn, writer, epoch, device):
     correct /= size
     writer.add_scalar('test_accuracy', correct, epoch + 1)
     print(f"Test Error: Accuracy: {(100 * correct):>0.1f}%, Avg loss: {test_loss:>8f} \n")
+
+
+def inference_from_similarity(cosine_similarities, train_labels, k=3):
+    # Predict labels based on similarity
+
+    # Find k biggest similarities and the corresponding labels
+    k_similar_indices = np.argpartition(cosine_similarities, -k, axis=1)[:, -k:]
+    k_similar_labels = []
+    k_biggest_similarities = []
+    for i in range(k):
+        index = k_similar_indices[0, i]
+        k_similar_labels.append(train_labels[index])
+        k_biggest_similarities.append(cosine_similarities[0, index])
+
+    # Soft voting
+    unique_labels = list(np.unique(k_similar_labels))
+    voting_dict = {label: 0 for label in unique_labels}
+    for label, similarity in zip(k_similar_labels, k_biggest_similarities):
+        voting_dict[label] += similarity
+    return max(voting_dict.items(), key=itemgetter(1))[0]
 
 
 def pytorch_embedding_test(training_dataloader, validation_dataloader, model, writer, epoch, device, k=3):
@@ -219,30 +222,11 @@ def pytorch_embedding_test(training_dataloader, validation_dataloader, model, wr
                 voting_dict[label] += similarity
             predictions.append(max(voting_dict.items(), key=itemgetter(1))[0])
 
-    # for test_embedding in tqdm(test_embeddings):
-    #     # Calculate cosine similarities
-    #     cosine_similarities = cosine_similarity(test_embedding.reshape(1, -1), train_embeddings)
-    #
-    #     # Find k biggest similarities and the corresponding labels
-    #     k_similar_indices = np.argpartition(cosine_similarities, -k, axis=1)[:, -k:]
-    #     k_similar_labels = []
-    #     k_biggest_similarities = []
-    #     for i in range(k):
-    #         k_similar_labels.append(train_labels[i])
-    #         k_biggest_similarities.append(cosine_similarities[0, i])
-    #
-    #     # Soft voting
-    #     unique_labels = list(np.unique(k_similar_labels))
-    #     voting_dict = {label: 0 for label in unique_labels}
-    #     for label, similarity in zip(k_similar_labels, k_biggest_similarities):
-    #         voting_dict[label] += similarity
-    #     predictions.append(max(voting_dict.items(), key=itemgetter(1))[0])
-
     # Calculate Accuracy and F1
     accuracy = accuracy_score(test_labels, predictions)
     f1 = f1_score(test_labels, predictions, average='micro')
     writer.add_scalar('embedding_test_accuracy', accuracy, epoch + 1)
-    print(f"Embedding Test Error: Accuracy: {(100 * accuracy):>0.1f}% \n")
+    print(f"Embedding Test Error: Accuracy: {(100 * accuracy):>0.1f}% \n, F1: {f1}")
     return 0
 
 
@@ -287,8 +271,6 @@ def preprocess_data(path, img_size=175, validation_size=0.25, classes=81313):
     # This drastically improves execution time
     validation_dict = {}
     training_dict = {}
-
-    # print(len(values))
 
     # Sample validation set using stratification
     validation_set = []
@@ -345,11 +327,12 @@ def preprocess_data(path, img_size=175, validation_size=0.25, classes=81313):
     # Read images, resize them and save them in new directories
     images_succesfully_saved = 0
     results = Parallel(n_jobs=8, prefer="threads")(
-        delayed(preprocess_images)(dir, path, img_size, validation_set) for dir in tqdm(directories))
+        delayed(preprocess_images)(dir, path, img_size, validation_set) for dir in directories)
     print(results)
     for i in results:
         images_succesfully_saved += i
     print(f"Images successfully saved: {images_succesfully_saved}")
+    print("done")
     return
 
 
@@ -366,7 +349,6 @@ class CustomDataset(Dataset):
         self.current_dir_file_list = os.listdir(data_path)
         self.number_of_images = len(self.current_dir_file_list)
 
-        self.number_of_images = 100000
 
     def __len__(self):
         return math.ceil(self.number_of_images / self.batch_size)
