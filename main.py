@@ -26,9 +26,9 @@ if __name__ == "__main__":
     file_writer.set_as_default()
 
     # Read labels
-    path = "C:/Users/Nikos/Desktop/Nikos/HMMY/Code/Google Landmark Recognition 2021/Dataset"
+    path = "path"
     labels = pd.read_csv(
-        filepath_or_buffer="C:/Users/Nikos/Desktop/Nikos/HMMY/Code/Google Landmark Recognition 2021/Dataset/train.csv")
+        filepath_or_buffer="path/train.csv")
     unique_classes = np.unique(labels.iloc[:, 1])
 
     # Updated DataSequence
@@ -47,10 +47,7 @@ if __name__ == "__main__":
     model = build_model((IMG_SIZE, IMG_SIZE, 3))  # x.shape[1:])
     model.fit(x=training_sequence, validation_data=validation_sequence, epochs=4, use_multiprocessing=False,
               callbacks=[tensorboard, csv_logger])
-    # model.save(LOG_DIR)
-    # tensorboard --logdir "Google Landmark Recognition 2021\logs"
 
-    # Execution Time
+    # Execution Time                tensorboard --logdir "Google Landmark Recognition 2021\logs"
     end = time.perf_counter()
     print(f"\nExecution time = {end - start:.2f} second(s)")
-    fet = 5

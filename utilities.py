@@ -31,7 +31,6 @@ import efficientnet.tfkeras as efn
 
 
 def build_model(input_shape, classes=81313):
-    # model_backbone = tf.keras.applications.VGG16(include_top=False, input_shape=input_shape)
     model_backbone = tf.keras.applications.ResNet50(include_top=False, weights="imagenet", input_shape=input_shape)
 
     # Freeze layers
@@ -41,7 +40,6 @@ def build_model(input_shape, classes=81313):
     # Add backbone
     model = Sequential()
     model.add(model_backbone)
-    # model = Sequential(model.layers)
 
     # Add neck
     model.add(Flatten())
@@ -165,10 +163,6 @@ class DataSequence(Sequence):
 
         self.current_dir_file_list = os.listdir(data_path)
         self.number_of_images = len(self.current_dir_file_list)
-
-        # TODO
-        # if not self.is_validation_sequence:
-        # self.number_of_images = 100 * self.batch_size
 
     def __len__(self):
         return math.ceil(self.number_of_images / self.batch_size)
