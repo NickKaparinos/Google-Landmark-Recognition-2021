@@ -1,6 +1,6 @@
 """
 Nick Kaparinos
-Titanic - Machine Learning from Disaster
+Google Landmark Recognition 2021
 Kaggle Competition
 """
 from utilities import *
@@ -14,7 +14,7 @@ if __name__ == "__main__":
     seed(0)
     np.random.seed(0)
 
-    path = "C:/Users/Nikos/Desktop/Nikos/HMMY/Code/Google Landmark Recognition 2021/Dataset"
+    path = ""
     preprocess_data(path=path, img_size=IMG_SIZE, validation_size=0.25)
 
 
