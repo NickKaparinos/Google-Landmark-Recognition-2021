@@ -4,7 +4,7 @@ Have you ever gone through your vacation photos and asked yourself: What is the 
 ## Dataset
 The dataset consists of 1580470 images of 81313 different landmarks.
 
-## Neural Network Arcitecture
+## Neural Network Architecture
 <p align="center"><img src="https://github.com/NickKaparinos/Google-Landmark-Recognition-2021/blob/pytorch/Images/architecture.png" alt="drawing" width="400"/>
   
 ## Additive Angular Margin Loss (ArcFace)
