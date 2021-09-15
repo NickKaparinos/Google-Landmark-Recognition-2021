@@ -1,6 +1,6 @@
 """
 Nick Kaparinos
-Titanic - Machine Learning from Disaster
+Google Landmark Recognition 2021
 Kaggle Competition
 """
 import numpy as np
