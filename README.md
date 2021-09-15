@@ -25,4 +25,4 @@ https://medium.com/@daniela.gingold/face-recognition-and-arcface-additive-angula
 <p align="center"><img src="https://github.com/NickKaparinos/Google-Landmark-Recognition-2021/blob/pytorch/Images/arcface_vs_softmax2.png" alt="drawing" width="600"/>
   
 ## Results
-Using Stochastic Gradient Descend with only **3 epochs** of training, a validation accuracy of **25.5%** and a micro F1 score of **0.25** was achieved. Due to computing limitations, no further optimisation could be done. Future work could include further network architecture optimisation and more training epochs.
+Using Stochastic Gradient Descend with only **3 epochs** of training, a validation accuracy of **25.5%** and a micro F1 score of **0.25** was achieved. Due to computing limitations, no further optimisation could be done. Future work could include further network architecture optimisation, larger image dimensions and more training epochs.
