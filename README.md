@@ -20,8 +20,6 @@ In a standard classification network, SoftMax and Categorical Cross-Entropy loss
   
 The drawback with SoftMax is that it does not produce a safety margin, which means that the borders are a bit blurry. We want the vectors of two images of the same person to be as similar as possible, and the vectors of two images of two different people to be as different as possible. That means we want to produce a margin, as SVM does.
   
-https://medium.com/@daniela.gingold/face-recognition-and-arcface-additive-angular-margin-loss-for-deep-face-recognition-44abc56916c
-
 <p align="center"><img src="https://github.com/NickKaparinos/Google-Landmark-Recognition-2021/blob/pytorch/Images/arcface_vs_softmax2.png" alt="drawing" width="600"/>
   
 ## Results
